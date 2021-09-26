@@ -7,9 +7,9 @@ import torch
 torch.cuda.set_device(0)
 
 # data settings
-dataset_path = "dummy_dataset"
-class_name = "dummy_class"
-modelname = "dummy_test"
+dataset_path = "/store3/Dataset/ftp.softronics.ch/mvtec_anomaly_detection"
+class_name = "bottle"
+modelname = "bottle"
 
 img_size = (448, 448)
 img_dims = [3] + list(img_size)
