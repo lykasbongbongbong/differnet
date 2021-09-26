@@ -81,10 +81,26 @@ def load_datasets(dataset_path, class_name):
 
     def target_transform(target):
         return class_perm[target]
+    def train_target_transform(target):
+        return train_class_perm[target]
 
     data_dir_train = os.path.join(dataset_path, class_name, 'train')
     data_dir_test = os.path.join(dataset_path, class_name, 'test')
 
+    # 處理train底下的normal和anomalies(few-shot)  
+    train_classes = os.listdir(data_dir_train)    # good, few_shot
+    train_classes.sort()
+    train_class_perm = list()
+    train_class_idx = 1
+    for cl in train_classes:
+        if cl == "good":
+            train_class_perm.append(0)
+        else:
+            train_class_perm.append(train_class_idx)
+            train_class_idx += 1
+    
+
+    # 處理 test 底下不同的defect types
     classes = os.listdir(data_dir_test)
     if 'good' not in classes:
         print('There should exist a subdirectory "good". Read the doc of this function for further information.')
@@ -99,9 +115,11 @@ def load_datasets(dataset_path, class_name):
             class_perm.append(class_idx)
             class_idx += 1
 
+
     transform_train = get_random_transforms()
 
-    trainset = ImageFolderMultiTransform(data_dir_train, transform=transform_train, n_transforms=c.n_transforms)
+    trainset = ImageFolderMultiTransform(data_dir_train, transform=transform_train, target_transform=train_target_transform, 
+                                        n_transforms=c.n_transforms)
     testset = ImageFolderMultiTransform(data_dir_test, transform=transform_train, target_transform=target_transform,
                                         n_transforms=c.n_transforms_test)
     return trainset, testset

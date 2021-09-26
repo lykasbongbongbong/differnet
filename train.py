@@ -49,9 +49,6 @@ def train(train_loader, test_loader):
             for i, data in enumerate(tqdm(train_loader, disable=c.hide_tqdm_bar)):
                 optimizer.zero_grad()
                 inputs, labels = preprocess_batch(data)  # move to device and reshape
-                # TODO inspect
-                # inputs += torch.randn(*inputs.shape).cuda() * c.add_img_noise
-
                 z = model(inputs)
                 loss = get_loss(z, model.nf.jacobian(run_forward=False))
                 train_loss.append(t2np(loss))
