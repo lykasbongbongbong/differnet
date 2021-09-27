@@ -2,12 +2,17 @@ import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
-
+import logging
 import config as c
 from localization import export_gradient_maps
 from model import DifferNet, save_model, save_weights
 from utils import *
 
+# logging AUROC results
+newline = '\n'
+LOG = f'./log_result/AUROC_{c.class_name}.log'
+logging.basicConfig(filename=LOG, filemode="w", level=logging.INFO)
+logging.info(f'[class:{c.class_name}]')
 
 class Score_Observer:
     '''Keeps an eye on the current and highest score so far'''
@@ -17,18 +22,24 @@ class Score_Observer:
         self.max_epoch = 0
         self.max_score = None
         self.last = None
+        self.better_model_save = False
 
     def update(self, score, epoch, print_score=False):
         self.last = score
+        better_model_save = False
         if epoch == 0 or score > self.max_score:
             self.max_score = score
             self.max_epoch = epoch
+            self.better_model_save = True
         if print_score:
             self.print_score()
+            return self.better_model_save
 
     def print_score(self):
+        logging.info('\n\n{:s}: \t last: {:.4f} \t max: {:.4f} \t epoch_max: {:d}\n\n'.format(self.name, self.last, self.max_score, self.max_epoch))
         print('{:s}: \t last: {:.4f} \t max: {:.4f} \t epoch_max: {:d}'.format(self.name, self.last, self.max_score,
                                                                                self.max_epoch))
+       
 
 
 def train(train_loader, test_loader):
@@ -48,16 +59,27 @@ def train(train_loader, test_loader):
             train_loss = list()
             for i, data in enumerate(tqdm(train_loader, disable=c.hide_tqdm_bar)):
                 optimizer.zero_grad()
-                inputs, labels = preprocess_batch(data)  # move to device and reshape
+                # inputs, labels = preprocess_batch(data)  # move to device and reshape
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+                inputs = inputs.view(-1, *inputs.shape[-3:])
                 z = model(inputs)
-                loss = get_loss(z, model.nf.jacobian(run_forward=False))
-                train_loss.append(t2np(loss))
-                loss.backward()
+                z_mean = z.mean(axis=1)
+                z_std = z.std(axis=1)
+                con_loss = get_con_loss(z_mean, labels)
+                
+                train_loss.append(t2np(con_loss))
+                con_loss.backward()
+                # loss = get_loss(z, model.nf.jacobian(run_forward=False))
+                # train_loss.append(t2np(loss))
+                # loss.backward()
                 optimizer.step()
 
             mean_train_loss = np.mean(train_loss)
             if c.verbose:
+                logging.info('Epoch: {:d}.{:d} \t train loss: {:.4f}'.format(epoch, sub_epoch, mean_train_loss))
                 print('Epoch: {:d}.{:d} \t train loss: {:.4f}'.format(epoch, sub_epoch, mean_train_loss))
+                
 
         # evaluate
         model.eval()
@@ -70,13 +92,17 @@ def train(train_loader, test_loader):
             for i, data in enumerate(tqdm(test_loader, disable=c.hide_tqdm_bar)):
                 inputs, labels = preprocess_batch(data)
                 z = model(inputs)
-                loss = get_loss(z, model.nf.jacobian(run_forward=False))
+                z_mean = z.mean(axis=1)
+                con_loss = get_con_loss(z_mean, labels)
+
+                # loss = get_loss(z, model.nf.jacobian(run_forward=False))
                 test_z.append(z)
-                test_loss.append(t2np(loss))
+                test_loss.append(t2np(con_loss))
                 test_labels.append(t2np(labels))
 
         test_loss = np.mean(np.array(test_loss))
         if c.verbose:
+            logging.info('Epoch: {:d} \t test_loss: {:.4f}'.format(epoch, test_loss))
             print('Epoch: {:d} \t test_loss: {:.4f}'.format(epoch, test_loss))
 
         test_labels = np.concatenate(test_labels)
@@ -84,14 +110,20 @@ def train(train_loader, test_loader):
 
         z_grouped = torch.cat(test_z, dim=0).view(-1, c.n_transforms_test, c.n_feat)
         anomaly_score = t2np(torch.mean(z_grouped ** 2, dim=(-2, -1)))
-        score_obs.update(roc_auc_score(is_anomaly, anomaly_score), epoch,
+        better_model_save = score_obs.update(roc_auc_score(is_anomaly, anomaly_score), epoch,
                          print_score=c.verbose or epoch == c.meta_epochs - 1)
+        
+        if c.save_model and better_model_save:
+            model.to('cpu')
+            save_model(model, c.modelname)
+            save_weights(model, c.modelname)
+
 
     if c.grad_map_viz:
         export_gradient_maps(model, test_loader, optimizer, -1)
 
-    if c.save_model:
-        model.to('cpu')
-        save_model(model, c.modelname)
-        save_weights(model, c.modelname)
+    # if c.save_model:
+    #     model.to('cpu')
+    #     save_model(model, c.modelname)
+    #     save_weights(model, c.modelname)
     return model

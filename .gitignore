@@ -1,1 +1,5 @@
-__pycache__
+__pycache__/*
+gradient_maps/*
+log_result/*
+models/*
+weights/*

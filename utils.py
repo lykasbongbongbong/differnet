@@ -44,6 +44,13 @@ def get_loss(z, jac):
     '''check equation 4 of the paper why this makes sense - oh and just ignore the scaling here'''
     return torch.mean(0.5 * torch.sum(z ** 2, dim=(1,)) - jac) / z.shape[1]
 
+def get_con_loss(y_pred, y_true):
+    confidence_margin = 5.
+    ref = torch.normal(mean=0., std=torch.full([5000], 1.)).cuda()
+    dev = (y_pred - torch.mean(ref)) / torch.std(ref)
+    inlier_loss = torch.abs(dev)
+    outlier_loss = torch.abs((confidence_margin - dev).clamp_(min=0.))
+    return torch.mean((1-y_true) * inlier_loss + y_true*outlier_loss)
 
 def load_datasets(dataset_path, class_name):
     '''
@@ -98,6 +105,7 @@ def load_datasets(dataset_path, class_name):
         else:
             train_class_perm.append(train_class_idx)
             train_class_idx += 1
+
     
 
     # 處理 test 底下不同的defect types
@@ -115,9 +123,7 @@ def load_datasets(dataset_path, class_name):
             class_perm.append(class_idx)
             class_idx += 1
 
-
     transform_train = get_random_transforms()
-
     trainset = ImageFolderMultiTransform(data_dir_train, transform=transform_train, target_transform=train_target_transform, 
                                         n_transforms=c.n_transforms)
     testset = ImageFolderMultiTransform(data_dir_test, transform=transform_train, target_transform=target_transform,
